@@ -1,0 +1,10 @@
+node_modules/
+.vscode/
+*.log
+*.tmp
+qr_image.png
+URL.txt
+.env
+# Uploaded files
+uploads/
+!uploads/.gitkeep
