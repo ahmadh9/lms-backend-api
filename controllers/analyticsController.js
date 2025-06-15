@@ -14,8 +14,7 @@ export const getDashboard = async (req, res) => {
       const totalUsers = await pool.query('SELECT COUNT(*) FROM users');
       const totalCourses = await pool.query('SELECT COUNT(*) FROM courses');
       const totalEnrollments = await pool.query('SELECT COUNT(*) FROM enrollments');
-      const pendingCourses = await pool.query('SELECT COUNT(*) FROM courses WHERE is_approved = false');
-      
+      const pendingCourses = await pool.query('SELECT COUNT(*) FROM courses WHERE status = $1', ['pending']);
       // المستخدمين الجدد آخر 30 يوم
       const newUsers = await pool.query(`
         SELECT COUNT(*) FROM users 

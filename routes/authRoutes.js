@@ -10,8 +10,9 @@ const router = express.Router();
 // تسجيل دخول Google OAuth (نفس الكود الموجود)
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-router.get(
-  '/google/callback',
+
+// تعديل Google callback في authRoutes.js
+router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: '/login' }),
   (req, res) => {
     const user = req.user;
@@ -25,20 +26,36 @@ router.get(
       { expiresIn: '7d' }
     );
 
-    res.json({
-      message: '✅ Logged in with Google',
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar
-      }
-    });
+    // حفظ التوكن والمستخدم في session أو cookie
+    req.session.token = token;
+    req.session.user = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar
+    };
+
+    // Redirect للـ frontend بدل إرجاع JSON
+    res.redirect('http://localhost:3000?googleLogin=success');
   }
 );
 
+// إضافة endpoint للحصول على session
+router.get('/session', (req, res) => {
+  if (req.session && req.session.user) {
+    res.json({
+      authenticated: true,
+      token: req.session.token,
+      user: req.session.user
+    });
+  } else {
+    res.json({
+      authenticated: false,
+      user: null
+    });
+  }
+});
 // تسجيل يدوي محدّث مع bcrypt
 router.post('/register', async (req, res) => {
   const { name, email, password, avatar } = req.body;

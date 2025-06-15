@@ -25,10 +25,10 @@ export const createCourse = async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO courses (title, description, instructor_id, category_id, thumbnail, is_approved)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO courses (title, description, instructor_id, category_id, thumbnail, status, is_published)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [title, description, instructor_id, category_id || null, thumbnail || null, false]
+      [title, description, instructor_id, category_id || null, thumbnail || null, 'pending', false]
     );
 
     res.status(201).json({
@@ -46,26 +46,20 @@ export const getAllCourses = async (req, res) => {
   try {
     console.log('📍 Getting all courses...');
     
-    // جرب query بسيط أولاً
-    const simpleQuery = await pool.query('SELECT * FROM courses');
-    console.log('Simple query result:', simpleQuery.rows);
+    const result = await pool.query(`
+  SELECT 
+    c.*, 
+    u.name as instructor_name, 
+    cat.name as category_name,
+    CAST(COUNT(DISTINCT e.id) AS INTEGER) as students_count
+  FROM courses c
+  JOIN users u ON c.instructor_id = u.id
+  LEFT JOIN categories cat ON c.category_id = cat.id
+  LEFT JOIN enrollments e ON c.id = e.course_id
+  GROUP BY c.id, u.name, cat.name
+`);
+
     
-    // الـ query الأصلي
-    const result = await pool.query(
-      `SELECT 
-        c.id,
-        c.title,
-        c.description,
-        c.thumbnail,
-        c.is_approved,
-        c.created_at,
-        u.name as instructor_name
-       FROM courses c
-       JOIN users u ON c.instructor_id = u.id
-       ORDER BY c.created_at DESC`
-    );
-    
-    console.log('Full query result:', result.rows);
     console.log('Number of courses:', result.rows.length);
 
     res.json({
@@ -78,6 +72,7 @@ export const getAllCourses = async (req, res) => {
     res.status(500).json({ error: 'Server error', details: err.message });
   }
 };
+
 // [3] جلب تفاصيل كورس معيّن
 export const getCourseById = async (req, res) => {
   try {
@@ -154,8 +149,7 @@ export const getCourseById = async (req, res) => {
 // [4] تعديل كورس (فقط للمدرس صاحب الكورس أو الأدمن)
 export const updateCourse = async (req, res) => {
   const { id } = req.params;
-  const { title, description, category_id, price, thumbnail_url, is_published } = req.body;
-  try {
+const { title, description, category_id, price, thumbnail_url, is_published, status, rejection_reason } = req.body;  try {
     // التحقق من الملكية أو أن المستخدم أدمن
     const courseRes = await pool.query('SELECT * FROM courses WHERE id = $1', [id]);
     const course = courseRes.rows[0];
@@ -164,19 +158,28 @@ export const updateCourse = async (req, res) => {
     if (req.user.role !== 'admin' && course.instructor_id !== req.user.id) {
       return res.status(403).json({ error: 'Access denied. Not allowed.' });
     }
-    const result = await pool.query(
-      `UPDATE courses SET
-        title = COALESCE($1, title),
-        description = COALESCE($2, description),
-        category_id = COALESCE($3, category_id),
-        price = COALESCE($4, price),
-        thumbnail_url = COALESCE($5, thumbnail_url),
-        is_published = COALESCE($6, is_published),
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7
-      RETURNING *`,
-      [title, description, category_id, price, thumbnail_url, is_published, id]
-    );
+    
+   const result = await pool.query(
+  `UPDATE courses SET
+    title = COALESCE($1, title),
+    description = COALESCE($2, description),
+    category_id = COALESCE($3, category_id),
+    price = COALESCE($4, price),
+    thumbnail_url = COALESCE($5, thumbnail_url),
+    is_published = COALESCE($6, is_published),
+    status = COALESCE($7, status),
+    rejection_reason = COALESCE($8, rejection_reason),
+    is_approved = CASE 
+      WHEN $7 = 'rejected' THEN false 
+      WHEN $7 = 'approved' THEN true 
+      ELSE is_approved 
+    END,
+    updated_at = CURRENT_TIMESTAMP
+  WHERE id = $9
+  RETURNING *`,
+  [title, description, category_id, price, thumbnail_url, is_published, status, rejection_reason, id]
+);
+    
     res.json({ message: '✅ Course updated', course: result.rows[0] });
   } catch (err) {
     console.error('❌ Update course error:', err);
@@ -195,6 +198,7 @@ export const deleteCourse = async (req, res) => {
     if (req.user.role !== 'admin' && course.instructor_id !== req.user.id) {
       return res.status(403).json({ error: 'Access denied. Not allowed.' });
     }
+    
     await pool.query('DELETE FROM courses WHERE id = $1', [id]);
     res.json({ message: '✅ Course deleted' });
   } catch (err) {
@@ -203,21 +207,65 @@ export const deleteCourse = async (req, res) => {
   }
 };
 
-// [6] موافقة الأدمن على كورس
-export const approveCourse = async (req, res) => {
+// [6] رفض كورس (للأدمن فقط)
+export const rejectCourse = async (req, res) => {
   const { id } = req.params;
+  const { reason } = req.body;
+  
   try {
+    // تحديث الكورس ليكون مرفوض
     const result = await pool.query(
-      `UPDATE courses SET is_approved = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
-      [id]
+      `UPDATE courses 
+       SET status = 'rejected', 
+           is_approved = false,
+           rejection_reason = $1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [reason || 'Course does not meet quality standards', id]
     );
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    res.json({ message: '✅ Course approved', course: result.rows[0] });
-  } catch (err) {
-    console.error('❌ Approve error:', err);
-    res.status(500).json({ error: 'Server error' });
+    
+    res.json({ 
+      success: true,
+      message: 'Course rejected successfully',
+      course: result.rows[0] 
+    });
+  } catch (error) {
+    console.error('Reject course error:', error);
+    res.status(500).json({ error: 'Failed to reject course' });
   }
 };
 
+// [7] موافقة الأدمن على كورس
+export const approveCourse = async (req, res) => {
+  const { id } = req.params;
+  console.log('Approve course called for ID:', id); // للتشخيص
+  
+  try {
+    const result = await pool.query(
+            `UPDATE courses 
+       SET is_approved = true, 
+           is_published = true,  -- نشر تلقائي عند الموافقة
+           status = 'approved',
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1 
+       RETURNING *`,
+      [id]
+    );
+    
+    console.log('Update result:', result.rows); // للتشخيص
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+    
+    res.json({ message: '✅ Course approved', course: result.rows[0] });
+  } catch (err) {
+    console.error('❌ Approve error details:', err); // تفاصيل الخطأ
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+};

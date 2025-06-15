@@ -1,8 +1,7 @@
-// routes/courseRoutes.js
 import express from 'express';
 import {
   createCourse, getAllCourses, getCourseById,
-  updateCourse, deleteCourse, approveCourse
+  updateCourse, deleteCourse, approveCourse,rejectCourse
 } from '../controllers/courseController.js';
 import { 
   authenticateToken, 
@@ -28,6 +27,7 @@ router.patch('/:id', authenticateToken, checkCourseOwnership, updateCourse);
 router.delete('/:id', authenticateToken, checkCourseOwnership, deleteCourse);
 
 // موافقة الأدمن على كورس
-router.patch('/:id/approve', authenticateToken, authorizeRoles('admin'), approveCourse);
-
-export default router;
+// Approve/Reject course (Admin only)
+router.put('/:id/approve', authenticateToken, authorizeRoles('admin'), approveCourse);
+router.put('/:id/reject', authenticateToken, authorizeRoles('admin'), rejectCourse);
+export default router;  

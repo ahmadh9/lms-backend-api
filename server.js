@@ -21,6 +21,7 @@ import searchRoutes from './routes/searchRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 
+
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -32,7 +33,10 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
