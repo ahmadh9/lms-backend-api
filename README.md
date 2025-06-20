@@ -196,6 +196,8 @@ lms-backend/
 * `assignments` – linked to lesson
 * `enrollments` – tracks student-course link
 * `submissions` – tracks assignment/quiz attempts
+* `quiz_submissions` – tracks each student's quiz submission and score
+
 
 ---
 
