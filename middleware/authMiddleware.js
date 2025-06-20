@@ -1,29 +1,32 @@
 // middleware/authMiddleware.js
+
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import pool from '../config/db.js';  // تأكد من مسار الاتصال بقاعدة البيانات
 
 dotenv.config();
 
+// 🛡️ التحقق من JWT بأي مكان ممكن
 export const authenticateToken = (req, res, next) => {
-  // جلب التوكن من كل مكان ممكن
   let token = null;
-  // 1. Authorization Header
+
+  // 1. Authorization header
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
     token = req.headers.authorization.split(' ')[1];
   }
-  // 2. x-auth-token Header (اختياري)
+  // 2. x-auth-token header
   else if (req.headers['x-auth-token']) {
     token = req.headers['x-auth-token'];
   }
-  // 3. Cookie (يحتاج cookie-parser مفعّل)
+  // 3. Cookie (requires cookie-parser)
   else if (req.cookies && req.cookies.token) {
     token = req.cookies.token;
   }
-  // 4. body (إذا فيه token)
+  // 4. Body
   else if (req.body && req.body.token) {
     token = req.body.token;
   }
-  // 5. query string (اختياري)
+  // 5. Query string
   else if (req.query && req.query.token) {
     token = req.query.token;
   }
@@ -37,52 +40,49 @@ export const authenticateToken = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid token.' });
   }
 };
 
-// 🔐 التحقق من الدور
+// 🔐 التحقق من الأدوار المسموحة
 export const authorizeRoles = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
     }
     next();
   };
 };
 
-// التحقق من ملكية الكورس
+// 📝 التحقق من ملكية الكورس أو كونه أدمن
 export const checkCourseOwnership = async (req, res, next) => {
   try {
     const courseId = req.params.id;
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    const userId   = req.user.id;
+    const role     = req.user.role;
 
-    // الأدمن يمكنه تعديل أي كورس
-    if (userRole === 'admin') {
+    // الأدمن يمرر دائماً
+    if (role === 'admin') {
       return next();
     }
 
-    // التحقق من ملكية الكورس
-    const result = await pool.query(
+    // جلب instructor_id من جدول courses
+    const { rows } = await pool.query(
       'SELECT instructor_id FROM courses WHERE id = $1',
       [courseId]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Course not found' });
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Course not found.' });
     }
 
-    const course = result.rows[0];
-    
-    // التحقق أن المستخدم هو صاحب الكورس
-    if (course.instructor_id !== userId) {
-      return res.status(403).json({ error: 'Not authorized to modify this course' });
+    // ليس صاحب الكورس => ممنوع
+    if (rows[0].instructor_id !== userId) {
+      return res.status(403).json({ error: 'Not authorized to modify this course.' });
     }
 
     next();
   } catch (err) {
     console.error('❌ Course ownership check error:', err);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error.' });
   }
 };

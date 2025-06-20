@@ -147,46 +147,72 @@ export const getCourseById = async (req, res) => {
 };
 
 // [4] تعديل كورس (فقط للمدرس صاحب الكورس أو الأدمن)
-export const updateCourse = async (req, res) => {
-  const { id } = req.params;
-const { title, description, category_id, price, thumbnail_url, is_published, status, rejection_reason } = req.body;  try {
-    // التحقق من الملكية أو أن المستخدم أدمن
-    const courseRes = await pool.query('SELECT * FROM courses WHERE id = $1', [id]);
-    const course = courseRes.rows[0];
-    if (!course) return res.status(404).json({ error: 'Course not found' });
 
+export const updateCourse = async (req, res) => {
+  console.log('🔧 updateCourse called with body:', req.body);
+  const { id } = req.params;
+  let {
+    title,
+    description,
+    category_id,
+    price,
+    thumbnail,
+    is_published,
+    status,
+    rejection_reason
+  } = req.body;
+
+  // تحويل '' إلى null لضمان تطابق النوع
+  if (category_id === '') {
+    category_id = null;
+  }
+
+  try {
+    // التأكد من وجود الكورس والملكية
+    const courseRes = await pool.query('SELECT * FROM courses WHERE id = $1', [id]);
+    if (courseRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+    const course = courseRes.rows[0];
     if (req.user.role !== 'admin' && course.instructor_id !== req.user.id) {
       return res.status(403).json({ error: 'Access denied. Not allowed.' });
     }
-    
-   const result = await pool.query(
-  `UPDATE courses SET
-    title = COALESCE($1, title),
-    description = COALESCE($2, description),
-    category_id = COALESCE($3, category_id),
-    price = COALESCE($4, price),
-    thumbnail_url = COALESCE($5, thumbnail_url),
-    is_published = COALESCE($6, is_published),
-    status = COALESCE($7, status),
-    rejection_reason = COALESCE($8, rejection_reason),
-    is_approved = CASE 
-      WHEN $7 = 'rejected' THEN false 
-      WHEN $7 = 'approved' THEN true 
-      ELSE is_approved 
-    END,
-    updated_at = CURRENT_TIMESTAMP
-  WHERE id = $9
-  RETURNING *`,
-  [title, description, category_id, price, thumbnail_url, is_published, status, rejection_reason, id]
-);
-    
-    res.json({ message: '✅ Course updated', course: result.rows[0] });
+
+    // تنفيذ التحديث مع العمود الصحيح "thumbnail"
+    const result = await pool.query(
+      `UPDATE courses SET
+         title            = COALESCE($1, title),
+         description      = COALESCE($2, description),
+         category_id      = COALESCE($3, category_id),
+         price            = COALESCE($4, price),
+         thumbnail        = COALESCE($5, thumbnail),
+         is_published     = COALESCE($6, is_published),
+         status           = COALESCE($7, status),
+         rejection_reason = COALESCE($8, rejection_reason),
+         updated_at       = CURRENT_TIMESTAMP
+       WHERE id = $9
+       RETURNING *`,
+      [
+        title,
+        description,
+        category_id,
+        price,
+        thumbnail,
+        is_published,
+        status,
+        rejection_reason,
+        id
+      ]
+    );
+
+    console.log('✅ updateCourse result:', result.rows[0]);
+    return res.json({ message: '✅ Course updated', course: result.rows[0] });
+
   } catch (err) {
-    console.error('❌ Update course error:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Update course error:', err.stack);
+    return res.status(500).json({ error: err.message });
   }
 };
-
 // [5] حذف كورس (فقط للمدرس صاحب الكورس أو الأدمن)
 export const deleteCourse = async (req, res) => {
   const { id } = req.params;
