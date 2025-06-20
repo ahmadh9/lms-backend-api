@@ -14,10 +14,13 @@ export const createLesson = async (req, res) => {
     }
 
     // التحقق من نوع المحتوى
-    const validTypes = ['video', 'text', 'quiz', 'assignment'];
-    if (!validTypes.includes(content_type)) {
-      return res.status(400).json({ error: 'Invalid content type' });
-    }
+   // قبل التعديل: validTypes = ['video', 'text', 'quiz', 'assignment']
+const validTypes = ['video', 'text', 'quiz']; // نزلنا "assignment"
+
+if (!validTypes.includes(content_type)) {
+  return res.status(400).json({ error: 'Invalid content type' });
+}
+
 
     // التحقق من ملكية الوحدة
     const moduleCheck = await pool.query(
@@ -88,39 +91,65 @@ export const getLessonById = async (req, res) => {
     const { lessonId } = req.params;
     const userId = req.user?.id;
 
-    const lesson = await pool.query(
-      'SELECT * FROM lessons WHERE id = $1',
+    // 1) جلب الدرس مع course_id
+    const lessonRes = await pool.query(
+      `SELECT l.*, m.course_id
+       FROM lessons l
+       JOIN modules m ON l.module_id = m.id
+       WHERE l.id = $1`,
       [lessonId]
     );
-
-    if (lesson.rows.length === 0) {
+    const lesson = lessonRes.rows[0];
+    if (!lesson) {
       return res.status(404).json({ error: 'Lesson not found' });
     }
 
-    // التحقق من التسجيل في الكورس (للطلاب)
+    // 2) تأكد أن الطالب مسجل
     if (userId && req.user.role === 'student') {
       const enrollmentCheck = await pool.query(
-        `SELECT e.* FROM enrollments e
+        `SELECT 1
+         FROM enrollments e
          JOIN modules m ON m.course_id = e.course_id
          JOIN lessons l ON l.module_id = m.id
          WHERE l.id = $1 AND e.user_id = $2`,
         [lessonId, userId]
       );
-
       if (enrollmentCheck.rows.length === 0) {
         return res.status(403).json({ error: 'Not enrolled in this course' });
       }
     }
 
-    res.json({
+    // 3) جلب كل دروس الموديول المرتبط
+    const moduleLessonsRes = await pool.query(
+      `SELECT id, title
+       FROM lessons
+       WHERE module_id = $1
+       ORDER BY "order" ASC`,
+      [lesson.module_id]
+    );
+    const moduleLessons = moduleLessonsRes.rows;
+
+    // 4) حدد الدرس التالي
+    let nextLessonId = null;
+    const idx = moduleLessons.findIndex(l => l.id === lesson.id);
+    if (idx !== -1 && idx + 1 < moduleLessons.length) {
+      nextLessonId = moduleLessons[idx + 1].id;
+    }
+
+    // 5) رجّع كل البيانات
+    return res.json({
       message: '✅ Lesson fetched',
-      lesson: lesson.rows[0]
+      lesson,
+      moduleLessons,
+      nextLessonId
     });
   } catch (err) {
     console.error('❌ Get lesson error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+
 
 // تحديث درس
 export const updateLesson = async (req, res) => {

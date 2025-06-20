@@ -1,3 +1,5 @@
+//routes/courseRoutes.js
+
 import express from 'express';
 import {
   createCourse, getAllCourses, getCourseById,
@@ -24,8 +26,7 @@ router.get('/:id', getCourseById);
 router.patch('/:id', authenticateToken, checkCourseOwnership, updateCourse);
 
 // حذف كورس — مدرس صاحب الكورس أو أدمن
-router.delete('/:id', authenticateToken, checkCourseOwnership, deleteCourse);
-
+router.delete('/:id', authenticateToken, deleteCourse);
 // موافقة الأدمن على كورس
 // Approve/Reject course (Admin only)
 router.put('/:id/approve', authenticateToken, authorizeRoles('admin'), approveCourse);

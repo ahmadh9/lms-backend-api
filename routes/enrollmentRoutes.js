@@ -55,7 +55,130 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 
-
+// جلب جميع التسجيلات (مع فلترة اختيارية)
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const { course_id } = req.query;
+    let query;
+    let params = [];
+    
+    if (course_id) {
+      // إذا كان هناك course_id، جلب طلاب هذا الكورس
+      query = `
+        SELECT 
+          e.*,
+          u.name as user_name,
+          u.email as user_email
+        FROM enrollments e
+        JOIN users u ON e.user_id = u.id
+        WHERE e.course_id = $1
+        ORDER BY e.enrolled_at DESC
+      `;
+      params = [course_id];
+    } else {
+      // جلب جميع التسجيلات
+      query = `
+        SELECT * FROM enrollments 
+        ORDER BY enrolled_at DESC
+      `;
+    }
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching enrollments:', error);
+    res.status(500).json({ error: 'Failed to fetch enrollments' });
+  }
+});
+// أضف هذا الـ route
+router.get('/course/:courseId/students', authenticateToken, async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user.id;
+    
+    // للمدرس فقط: التحقق أنه صاحب الكورس
+    if (req.user.role === 'instructor') {
+      const courseCheck = await pool.query(
+        'SELECT * FROM courses WHERE id = $1 AND instructor_id = $2',
+        [courseId, userId]
+      );
+      
+      if (courseCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+    }
+    
+    // جلب الطلاب المسجلين
+    const students = await pool.query(
+      `SELECT 
+        e.id as enrollment_id,
+        e.enrolled_at,
+        e.progress,
+        e.completed_at,
+        u.id as student_id,
+        u.name as student_name,
+        u.email as student_email
+      FROM enrollments e
+      JOIN users u ON e.user_id = u.id
+      WHERE e.course_id = $1
+      ORDER BY e.enrolled_at DESC`,
+      [courseId]
+    );
+    
+    res.json({
+      message: 'Students fetched',
+      students: students.rows
+    });
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+// أضف هذا الـ route
+router.get('/course/:courseId/students', authenticateToken, async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user.id;
+    
+    // للمدرس فقط: التحقق أنه صاحب الكورس
+    if (req.user.role === 'instructor') {
+      const courseCheck = await pool.query(
+        'SELECT * FROM courses WHERE id = $1 AND instructor_id = $2',
+        [courseId, userId]
+      );
+      
+      if (courseCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+    }
+    
+    // جلب الطلاب المسجلين
+    const students = await pool.query(
+      `SELECT 
+        e.id as enrollment_id,
+        e.enrolled_at,
+        e.progress,
+        e.completed_at,
+        u.id as student_id,
+        u.name as student_name,
+        u.email as student_email
+      FROM enrollments e
+      JOIN users u ON e.user_id = u.id
+      WHERE e.course_id = $1
+      ORDER BY e.enrolled_at DESC`,
+      [courseId]
+    );
+    
+    res.json({
+      message: 'Students fetched',
+      students: students.rows
+    });
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+router.get('/course/:courseId/students', authenticateToken, getCourseStudents);
 // عرض كورسات الطالب
 router.get('/my-courses', authenticateToken, async (req, res) => {
   try {

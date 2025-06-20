@@ -5,11 +5,28 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const authenticateToken = (req, res, next) => {
-  // جرب من عدة أماكن
-  const token = req.headers.authorization?.split(' ')[1] || 
-                req.headers['x-auth-token'] || 
-                req.body.token || 
-                req.query.token;
+  // جلب التوكن من كل مكان ممكن
+  let token = null;
+  // 1. Authorization Header
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+  // 2. x-auth-token Header (اختياري)
+  else if (req.headers['x-auth-token']) {
+    token = req.headers['x-auth-token'];
+  }
+  // 3. Cookie (يحتاج cookie-parser مفعّل)
+  else if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+  }
+  // 4. body (إذا فيه token)
+  else if (req.body && req.body.token) {
+    token = req.body.token;
+  }
+  // 5. query string (اختياري)
+  else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
 
   if (!token) {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -33,6 +50,7 @@ export const authorizeRoles = (...roles) => {
     next();
   };
 };
+
 // التحقق من ملكية الكورس
 export const checkCourseOwnership = async (req, res, next) => {
   try {

@@ -106,24 +106,23 @@ export const uploadAssignmentFile = async (req, res) => {
   try {
     const { assignmentId } = req.params;
     const studentId = req.user.id;
-    const file = req.file;
 
-    if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    const file = req.files?.assignmentFile?.[0] || null;
+    const submission_text = req.body.submission_text?.trim() || null;
+
+    if (!submission_text && !file) {
+      return res.status(400).json({ error: 'Submission text or file is required' });
     }
 
-    // التحقق من وجود الواجب
     const assignmentCheck = await pool.query(
       'SELECT * FROM assignments WHERE id = $1',
       [assignmentId]
     );
-
     if (assignmentCheck.rows.length === 0) {
-      await fs.unlink(file.path);
+      if (file) await fs.unlink(file.path);
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    // التحقق من التسجيل في الكورس
     const enrollmentCheck = await pool.query(
       `SELECT e.* FROM enrollments e
        JOIN modules m ON m.course_id = e.course_id
@@ -132,27 +131,22 @@ export const uploadAssignmentFile = async (req, res) => {
        WHERE a.id = $1 AND e.user_id = $2`,
       [assignmentId, studentId]
     );
-
     if (enrollmentCheck.rows.length === 0) {
-      await fs.unlink(file.path);
+      if (file) await fs.unlink(file.path);
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }
 
-    // التحقق من عدم التسليم المسبق
     const existingSubmission = await pool.query(
-      'SELECT * FROM submissions WHERE assignment_id = $1 AND user_id = $2',
+      'SELECT 1 FROM submissions WHERE assignment_id = $1 AND user_id = $2',
       [assignmentId, studentId]
     );
-
     if (existingSubmission.rows.length > 0) {
-      await fs.unlink(file.path);
+      if (file) await fs.unlink(file.path);
       return res.status(400).json({ error: 'Assignment already submitted' });
     }
 
-    // حفظ التسليم
-    const fileUrl = `/uploads/assignments/${file.filename}`;
-    const submission_text = req.body.submission_text || `Uploaded file: ${file.originalname}`;
-    
+    const fileUrl = file ? `/uploads/assignments/${file.filename}` : null;
+
     const result = await pool.query(
       `INSERT INTO submissions (assignment_id, user_id, submission_url, submission_text, submitted_at)
        VALUES ($1, $2, $3, $4, NOW())
@@ -162,12 +156,7 @@ export const uploadAssignmentFile = async (req, res) => {
 
     res.status(201).json({
       message: '✅ Assignment submitted successfully',
-      submission: result.rows[0],
-      file: {
-        filename: file.filename,
-        originalName: file.originalname,
-        size: file.size
-      }
+      submission: result.rows[0]
     });
 
   } catch (err) {
@@ -175,6 +164,20 @@ export const uploadAssignmentFile = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+export const uploadLessonVideoFile = async (req, res) => {
+  try {
+    const file = req.file; // هذا اللي نحاول نرفعه
+    if (!file) return res.status(400).json({ error: 'No video uploaded' });
+
+    const videoUrl = `/uploads/videos/${file.filename}`;
+    res.status(200).json({ message: '✅ Video uploaded', url: videoUrl });
+  } catch (err) {
+    console.error('❌ Upload lesson video error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+
 
 // تحميل ملف
 export const downloadFile = async (req, res) => {

@@ -89,6 +89,9 @@ export const getMyEnrollments = async (req, res) => {
 // عرض طلاب كورس معين (للمدرس)
 export const getCourseStudents = async (req, res) => {
   try {
+    console.log('🔥 Course Students Route HIT');
+    console.log('User:', req.user);
+    console.log('CourseId:', req.params.courseId);
     const courseId = req.params.courseId;
     const instructorId = req.user.id;
 
@@ -121,6 +124,7 @@ export const getCourseStudents = async (req, res) => {
       [courseId]
     );
 
+    console.log('📦 Found students:', students.rows.length);
     res.json({
       message: '✅ Course students fetched',
       students: students.rows

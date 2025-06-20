@@ -22,26 +22,29 @@ ensureDirectoryExists(path.join(uploadsDir, 'avatars'));
 ensureDirectoryExists(path.join(uploadsDir, 'assignments'));
 ensureDirectoryExists(path.join(uploadsDir, 'thumbnails'));
 ensureDirectoryExists(path.join(uploadsDir, 'misc'));
+ensureDirectoryExists(path.join(uploadsDir, 'videos'));
 
 // إعداد مجلد التخزين
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let uploadPath = path.join(__dirname, '..', 'uploads');
-    
-    if (file.fieldname === 'avatar') {
-      uploadPath = path.join(uploadPath, 'avatars');
-    } else if (file.fieldname === 'assignment') {
-      uploadPath = path.join(uploadPath, 'assignments');
-    } else if (file.fieldname === 'courseThumbnail') {
-      uploadPath = path.join(uploadPath, 'thumbnails');
-    } else {
-      uploadPath = path.join(uploadPath, 'misc');
-    }
-    
-    // تأكد من وجود المجلد
-    ensureDirectoryExists(uploadPath);
-    cb(null, uploadPath);
-  },
+ destination: (req, file, cb) => {
+  let uploadPath = path.join(__dirname, '..', 'uploads');
+
+  // يشمل كل الاحتمالات
+  if (file.fieldname === 'avatar') {
+    uploadPath = path.join(uploadPath, 'avatars');
+  } else if (file.fieldname === 'assignment' || file.fieldname === 'assignmentFile') {
+    uploadPath = path.join(uploadPath, 'assignments');
+  } else if (file.fieldname === 'courseThumbnail') {
+    uploadPath = path.join(uploadPath, 'thumbnails');
+  } else if (file.fieldname === 'lessonVideo') {
+  uploadPath = path.join(uploadPath, 'videos');
+} else {
+    uploadPath = path.join(uploadPath, 'misc');
+  }
+
+  ensureDirectoryExists(uploadPath);
+  cb(null, uploadPath);
+},
   filename: (req, file, cb) => {
     // الحفاظ على امتداد الملف الأصلي
     const ext = path.extname(file.originalname);
@@ -74,6 +77,15 @@ const fileFilter = (req, file, cb) => {
     cb(new Error(`Invalid file type. Allowed types: ${allowedTypes.join(', ')}`), false);
   }
 };
+export const uploadLessonVideo = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = ['video/mp4', 'video/webm', 'video/ogg'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Only MP4, WebM, or OGG videos allowed'), false);
+  }
+}).single('lessonVideo');
 
 // إعدادات Multer
 export const uploadAvatar = multer({
@@ -84,13 +96,18 @@ export const uploadAvatar = multer({
   }
 }).single('avatar');
 
+// ...
 export const uploadAssignment = multer({
   storage,
   fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB max
   }
-}).single('assignment');
+}).fields([
+  { name: 'assignmentFile', maxCount: 1 }
+]);
+// ...
+
 
 export const uploadCourseThumbnail = multer({
   storage,

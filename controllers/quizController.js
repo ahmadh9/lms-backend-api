@@ -1,217 +1,217 @@
 // controllers/quizController.js
 import pool from '../config/db.js';
 
-// إنشاء اختبار جديد
+/**
+ * إنشاء أو إضافة أسئلة جديدة إلى اختبار الدرس
+ */
 export const createQuiz = async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { questions } = req.body;
     const instructorId = req.user.id;
 
-    // التحقق من البيانات
-    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+    if (!Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: 'Questions array is required' });
     }
 
-    // التحقق من ملكية الدرس
+    // تحقق من ملكية الدرس
     const lessonCheck = await pool.query(
-      `SELECT l.*, c.instructor_id 
+      `SELECT c.instructor_id
        FROM lessons l
        JOIN modules m ON l.module_id = m.id
        JOIN courses c ON m.course_id = c.id
        WHERE l.id = $1`,
       [lessonId]
     );
-
-    if (lessonCheck.rows.length === 0) {
+    if (!lessonCheck.rows.length) {
       return res.status(404).json({ error: 'Lesson not found' });
     }
-
     if (lessonCheck.rows[0].instructor_id !== instructorId) {
-      return res.status(403).json({ error: 'Not authorized to add quiz to this lesson' });
+      return res.status(403).json({ error: 'Not authorized to add questions to this lesson' });
     }
 
-    // التحقق من عدم وجود اختبار سابق للدرس
-    const existingQuiz = await pool.query(
-      'SELECT * FROM quizzes WHERE lesson_id = $1',
-      [lessonId]
-    );
-
-    if (existingQuiz.rows.length > 0) {
-      return res.status(400).json({ error: 'Quiz already exists for this lesson' });
-    }
-
-    // البدء بـ transaction
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // إدخال الأسئلة
-      const quizzes = [];
-      for (const question of questions) {
-        const { question: questionText, options, correct_answer } = question;
+      const inserted = [];
+      for (const q of questions) {
+        const { id, type, question, options, correct_answer, answer } = q;
+        if (id) continue; // سؤال موجود مسبقاً، نتخطاه
 
-        // التحقق من صحة البيانات
-        if (!questionText || !options || !Array.isArray(options) || options.length < 2) {
-          throw new Error('Invalid question format');
+        // validation...
+        if (!question || !type) throw new Error('Each question needs text and type');
+        if (type === 'multiple_choice') {
+          if (!Array.isArray(options) || options.length < 2) throw new Error('Multiple choice requires at least 2 options');
+          if (correct_answer == null || correct_answer < 0 || correct_answer >= options.length) throw new Error('Invalid correct_answer index');
+        } else if (type === 'true_false') {
+          if (correct_answer !== 'true' && correct_answer !== 'false') throw new Error('True/False requires correct_answer "true" or "false"');
+        } else if (type === 'short_answer') {
+          if (typeof answer !== 'string' || !answer.trim()) throw new Error('Short answer requires a non-empty answer');
         }
 
-        if (correct_answer === undefined || correct_answer >= options.length) {
-          throw new Error('Invalid correct answer index');
-        }
+        const optionsJson =
+          type === 'multiple_choice'
+            ? JSON.stringify(options)
+            : type === 'true_false'
+            ? JSON.stringify(['true', 'false'])
+            : JSON.stringify([]);
+        const correctAnsVal =
+          type === 'multiple_choice'
+            ? correct_answer
+            : type === 'true_false'
+            ? correct_answer === 'true' ? 1 : 0
+            : 0;
 
         const result = await client.query(
-          `INSERT INTO quizzes (lesson_id, question, options, correct_answer)
-           VALUES ($1, $2, $3, $4)
+          `INSERT INTO quizzes
+             (lesson_id, question, type, options, correct_answer, answer)
+           VALUES
+             ($1, $2, $3, $4::jsonb, $5, $6)
            RETURNING *`,
-          [lessonId, questionText, JSON.stringify(options), correct_answer]
+          [lessonId, question, type, optionsJson, correctAnsVal, type === 'short_answer' ? answer : null]
         );
-
-        quizzes.push(result.rows[0]);
+        inserted.push(result.rows[0]);
       }
 
       await client.query('COMMIT');
-
-      res.status(201).json({
-        message: '✅ Quiz created successfully',
-        quiz: quizzes
-      });
-
+      res.status(201).json({ message: '✅ Questions added', quiz: inserted });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
     }
-
   } catch (err) {
-    console.error('❌ Create quiz error:', err);
+    console.error('❌ Create/add questions error:', err);
     res.status(500).json({ error: err.message || 'Server error' });
   }
 };
 
-// الحصول على اختبار الدرس
+/**
+ * جلب اختبار الدرس مع محاولة الطالب إن وجدت
+ */
 export const getLessonQuiz = async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const userId = req.user?.id;
+    const user = req.user;
 
-    // التحقق من التسجيل في الكورس (للطلاب)
-    if (userId && req.user.role === 'student') {
-      const enrollmentCheck = await pool.query(
-        `SELECT e.* FROM enrollments e
-         JOIN modules m ON m.course_id = e.course_id
+    if (user.role === 'student') {
+      const enrolled = await pool.query(
+        `SELECT 1
+         FROM enrollments e
+         JOIN modules m ON e.course_id = m.course_id
          JOIN lessons l ON l.module_id = m.id
          WHERE l.id = $1 AND e.user_id = $2`,
-        [lessonId, userId]
+        [lessonId, user.id]
       );
-
-      if (enrollmentCheck.rows.length === 0) {
-        return res.status(403).json({ error: 'Not enrolled in this course' });
-      }
+      if (!enrolled.rows.length) return res.status(403).json({ error: 'Not enrolled in this course' });
     }
 
-    // جلب أسئلة الاختبار
-    const quiz = await pool.query(
-      `SELECT id, question, options
+    const quizRes = await pool.query(
+      `SELECT id, question, type, options, correct_answer, answer
        FROM quizzes
        WHERE lesson_id = $1
        ORDER BY id`,
       [lessonId]
     );
 
-    res.json({
-      message: '✅ Quiz fetched',
-      quiz: quiz.rows
-    });
+    let attempt = null;
+    if (user.role === 'student') {
+      const atRes = await pool.query(
+        `SELECT score
+         FROM quiz_attempts
+         WHERE user_id = $1 AND lesson_id = $2
+         LIMIT 1`,
+        [user.id, lessonId]
+      );
+      attempt = atRes.rows[0] || null;
+    }
 
+    res.json({ message: '✅ Quiz fetched', quiz: quizRes.rows, attempt });
   } catch (err) {
     console.error('❌ Get quiz error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-// تسليم إجابات الاختبار
+/**
+ * تسليم إجابات الاختبار
+ */
 export const submitQuiz = async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { answers } = req.body;
     const studentId = req.user.id;
 
-    // التحقق من البيانات
-    if (!answers || !Array.isArray(answers)) {
-      return res.status(400).json({ error: 'Answers array is required' });
-    }
+    if (!Array.isArray(answers)) return res.status(400).json({ error: 'Answers array is required' });
 
-    // التحقق من التسجيل
-    const enrollmentCheck = await pool.query(
-      `SELECT e.* FROM enrollments e
-       JOIN modules m ON m.course_id = e.course_id
+    const enrolled = await pool.query(
+      `SELECT 1
+       FROM enrollments e
+       JOIN modules m ON e.course_id = m.course_id
        JOIN lessons l ON l.module_id = m.id
        WHERE l.id = $1 AND e.user_id = $2`,
       [lessonId, studentId]
     );
+    if (!enrolled.rows.length) return res.status(403).json({ error: 'Not enrolled in this course' });
 
-    if (enrollmentCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Not enrolled in this course' });
-    }
-
-    // جلب الأسئلة مع الإجابات الصحيحة
-    const quiz = await pool.query(
-      'SELECT id, correct_answer FROM quizzes WHERE lesson_id = $1 ORDER BY id',
+    const quizData = await pool.query(
+      `SELECT id, type, correct_answer, answer
+       FROM quizzes
+       WHERE lesson_id = $1
+       ORDER BY id`,
       [lessonId]
     );
+    const questions = quizData.rows;
+    if (!questions.length) return res.status(404).json({ error: 'No quiz found for this lesson' });
 
-    if (quiz.rows.length === 0) {
-      return res.status(404).json({ error: 'No quiz found for this lesson' });
-    }
-
-    // حساب النتيجة
-    let correctAnswers = 0;
-    const results = [];
-
-    for (let i = 0; i < quiz.rows.length; i++) {
-      const question = quiz.rows[i];
-      const userAnswer = answers[i];
-      const isCorrect = userAnswer === question.correct_answer;
-
-      if (isCorrect) correctAnswers++;
-
-      results.push({
-        questionId: question.id,
-        userAnswer,
-        correctAnswer: question.correct_answer,
+    let correctCount = 0;
+    const results = questions.map((q, idx) => {
+      const userAns = answers[idx];
+      let isCorrect = q.type === 'short_answer'
+        ? typeof userAns === 'string' && userAns.trim().toLowerCase() === q.answer.trim().toLowerCase()
+        : userAns === q.correct_answer;
+      if (isCorrect) correctCount++;
+      return {
+        questionId: q.id,
+        userAnswer: userAns,
+        correctAnswer: q.type === 'short_answer' ? q.answer : q.correct_answer,
         isCorrect
-      });
-    }
-
-    const score = Math.round((correctAnswers / quiz.rows.length) * 100);
-
-    // حفظ النتيجة (يمكنك إنشاء جدول quiz_attempts لحفظ المحاولات)
-    res.json({
-      message: '✅ Quiz submitted',
-      score,
-      totalQuestions: quiz.rows.length,
-      correctAnswers,
-      results
+      };
     });
 
+    const score = Math.round((correctCount / questions.length) * 100);
+
+    await pool.query(
+      `INSERT INTO quiz_attempts (user_id, lesson_id, score)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, lesson_id)
+       DO UPDATE SET score = EXCLUDED.score, submitted_at = CURRENT_TIMESTAMP`,
+      [studentId, lessonId, score]
+    );
+
+    res.json({ message: '✅ Quiz submitted', score, totalQuestions: questions.length, correctAnswers: correctCount, results });
   } catch (err) {
     console.error('❌ Submit quiz error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-// تحديث سؤال
+// ... the rest of quizController unchanged (updateQuizQuestion, deleteQuizQuestion, getCourseQuizzes) ...
+
+
+/**
+ * تحديث سؤال فردي (مدرس/أدمن)
+ */
 export const updateQuizQuestion = async (req, res) => {
   try {
     const { questionId } = req.params;
-    const { question, options, correct_answer } = req.body;
-    const instructorId = req.user.id;
+    const { question, type, options, correct_answer, answer } = req.body;
+    const userId = req.user.id;
 
-    // التحقق من ملكية السؤال
-    const questionCheck = await pool.query(
-      `SELECT q.*, c.instructor_id 
+    const check = await pool.query(
+      `SELECT c.instructor_id
        FROM quizzes q
        JOIN lessons l ON q.lesson_id = l.id
        JOIN modules m ON l.module_id = m.id
@@ -219,45 +219,75 @@ export const updateQuizQuestion = async (req, res) => {
        WHERE q.id = $1`,
       [questionId]
     );
-
-    if (questionCheck.rows.length === 0) {
+    if (!check.rows.length) {
       return res.status(404).json({ error: 'Question not found' });
     }
-
-    if (questionCheck.rows[0].instructor_id !== instructorId && req.user.role !== 'admin') {
+    const ownerId = check.rows[0].instructor_id;
+    if (ownerId !== userId && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not authorized to update this question' });
+    }
+
+    if (type === 'multiple_choice') {
+      if (!Array.isArray(options) || options.length < 2) {
+        return res.status(400).json({ error: 'Multiple choice requires ≥2 options' });
+      }
+      if (
+        correct_answer == null ||
+        correct_answer < 0 ||
+        correct_answer >= options.length
+      ) {
+        return res.status(400).json({ error: 'Invalid correct_answer index' });
+      }
+    } else if (type === 'true_false') {
+      if (correct_answer !== 'true' && correct_answer !== 'false') {
+        return res.status(400).json({ error: 'True/False requires "true" or "false"' });
+      }
+    } else if (type === 'short_answer') {
+      if (typeof answer !== 'string' || !answer.trim()) {
+        return res.status(400).json({ error: 'Short answer requires non-empty answer' });
+      }
     }
 
     const result = await pool.query(
       `UPDATE quizzes
-       SET question = COALESCE($1, question),
-           options = COALESCE($2, options),
-           correct_answer = COALESCE($3, correct_answer)
-       WHERE id = $4
+       SET
+         question       = COALESCE($1, question),
+         type           = COALESCE($2, type),
+         options        = COALESCE($3::jsonb, options),
+         correct_answer = COALESCE($4, correct_answer),
+         answer         = COALESCE($5, answer)
+       WHERE id = $6
        RETURNING *`,
-      [question, options ? JSON.stringify(options) : null, correct_answer, questionId]
+      [
+        question || null,
+        type || null,
+        options != null ? JSON.stringify(options) : null,
+        correct_answer != null ? correct_answer : null,
+        answer != null ? answer : null,
+        questionId
+      ]
     );
 
     res.json({
       message: '✅ Question updated',
       question: result.rows[0]
     });
-
   } catch (err) {
     console.error('❌ Update question error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-// حذف سؤال
+/**
+ * حذف سؤال
+ */
 export const deleteQuizQuestion = async (req, res) => {
   try {
     const { questionId } = req.params;
-    const instructorId = req.user.id;
+    const userId = req.user.id;
 
-    // التحقق من ملكية السؤال
-    const questionCheck = await pool.query(
-      `SELECT q.*, c.instructor_id 
+    const check = await pool.query(
+      `SELECT c.instructor_id
        FROM quizzes q
        JOIN lessons l ON q.lesson_id = l.id
        JOIN modules m ON l.module_id = m.id
@@ -265,23 +295,70 @@ export const deleteQuizQuestion = async (req, res) => {
        WHERE q.id = $1`,
       [questionId]
     );
-
-    if (questionCheck.rows.length === 0) {
+    if (!check.rows.length) {
       return res.status(404).json({ error: 'Question not found' });
     }
-
-    if (questionCheck.rows[0].instructor_id !== instructorId && req.user.role !== 'admin') {
+    const ownerId = check.rows[0].instructor_id;
+    if (ownerId !== userId && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not authorized to delete this question' });
     }
 
     await pool.query('DELETE FROM quizzes WHERE id = $1', [questionId]);
-
-    res.json({
-      message: '✅ Question deleted successfully'
-    });
-
+    res.json({ message: '✅ Question deleted successfully' });
   } catch (err) {
     console.error('❌ Delete question error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * GET جميع الاختبارات في الكورس (طالب)
+ */
+export const getCourseQuizzes = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user.id;
+
+    const result = await pool.query(`
+      SELECT
+        l.id AS lesson_id,
+        l.title AS lesson_title,
+        COUNT(q.id) AS question_count,
+        MAX(a.score) AS score
+      FROM lessons l
+      JOIN modules m ON l.module_id = m.id
+      JOIN courses c ON m.course_id = c.id
+      JOIN quizzes q ON q.lesson_id = l.id
+      LEFT JOIN quiz_attempts a
+        ON a.lesson_id = l.id AND a.user_id = $2
+      WHERE c.id = $1
+      GROUP BY l.id, l.title
+      ORDER BY l.id
+    `, [courseId, userId]);
+
+    res.json({ quizzes: result.rows });
+  } catch (err) {
+    console.error('❌ getCourseQuizzes error:', err);
+    res.status(500).json({ error: 'Server error fetching quizzes' });
+  }
+};
+export const getQuizAttemptsForLesson = async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    // ممكن تضيف تحقق ملكية الدرس للمدرس الحالي إذا تحب
+
+    const result = await pool.query(
+      `SELECT qa.id, qa.user_id, u.name, qa.score, qa.submitted_at
+       FROM quiz_attempts qa
+       JOIN users u ON qa.user_id = u.id
+       WHERE qa.lesson_id = $1
+       ORDER BY qa.submitted_at DESC`,
+      [lessonId]
+    );
+
+    res.json({ attempts: result.rows });
+  } catch (err) {
+    console.error('❌ getQuizAttemptsForLesson error:', err);
+    res.status(500).json({ error: 'Server error fetching attempts' });
   }
 };

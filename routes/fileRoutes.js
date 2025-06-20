@@ -4,13 +4,15 @@ import {
   uploadUserAvatar,
   uploadCourseThumbnailFile,
   uploadAssignmentFile,
-  downloadFile
+  downloadFile,
+  uploadLessonVideoFile
 } from '../controllers/fileController.js';
 import {
   uploadAvatar,
   uploadAssignment,
   uploadCourseThumbnail,
-  handleUploadError
+  handleUploadError,
+  uploadLessonVideo
 } from '../middleware/fileUploadMiddleware.js';
 import { authenticateToken, authorizeRoles } from '../middleware/authMiddleware.js';
 
@@ -23,6 +25,14 @@ router.post(
   uploadAvatar,
   handleUploadError,
   uploadUserAvatar
+);
+router.post(
+  '/lesson/video',
+  authenticateToken,
+  authorizeRoles('instructor'),
+  uploadLessonVideo,
+  handleUploadError,
+  uploadLessonVideoFile
 );
 
 // رفع صورة الكورس

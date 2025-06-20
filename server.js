@@ -20,6 +20,7 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import searchRoutes from './routes/searchRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
+import cookieParser from 'cookie-parser';
 
 
 import path from 'path';
@@ -49,7 +50,7 @@ app.use(
 );
 app.use(passport.initialize());
 app.use(passport.session());
-
+app.use(cookieParser());
 // routes
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
