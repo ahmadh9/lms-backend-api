@@ -1,156 +1,133 @@
-# 🎓 LMS Frontend
 
-A fully responsive, role-based frontend interface for a complete Learning Management System (LMS) built using **React.js** and **Material UI**. This frontend connects seamlessly with the [LMS Backend API](https://github.com/ahmadh9/lms-backend-api) and supports multiple user roles: `student`, `instructor`, and `admin`.
+# 📚 LMS Backend API
 
----
+A secure and modular RESTful API built with **Express.js** and **PostgreSQL** to power a full-featured Learning Management System (LMS).
 
-## 🚀 Overview
-
-The LMS frontend delivers all features expected from a professional e-learning platform:
-
-* Dynamic role-based dashboards
-* Course browsing and enrollment
-* Lesson navigation and completion tracking
-* Interactive quizzes and assignment submissions
-* Instructor course creation and grading tools
-* Admin control panels
-
-Built using modern React patterns (hooks, context, modular services), the app is designed for maintainability, performance, and scalability.
+This backend supports multiple user roles (`student`, `instructor`, `admin`) with logic for authentication, course management, assignments, quizzes, progress tracking, and more.
 
 ---
 
-## 👥 Supported Roles
+## 🚀 Features
 
-* **Student**
+- JWT + Google OAuth authentication
+- Modular routing with controllers
+- Role-based access and session handling
+- Course creation, approval, and enrollment
+- Assignments, quizzes, and lesson delivery
+- File uploads and review system
+- Real-time progress tracking
+- PostgreSQL relational database
+- Built-in test route to check DB connectivity
 
-  * Enroll in courses
-  * View lessons
-  * Submit assignments or quizzes
-  * Track progress in real-time
+---
 
-* **Instructor**
+## 🔐 Auth System
 
-  * Create and manage courses
-  * Upload lessons (video link, text, or file)
-  * Review and grade student submissions
-
-* **Admin**
-
-  * Approve or reject courses
-  * Manage users and categories
-  * View platform-wide analytics
+- Login via Google OAuth 2.0 (Passport.js)
+- Email/password login supported
+- Sessions handled using `express-session` + `cookie-parser`
+- JWT for protected routes
 
 ---
 
 ## 🧩 Tech Stack
 
-| Layer      | Technology               |
-| ---------- | ------------------------ |
-| Frontend   | React.js (Vite / CRA)    |
-| UI Library | Material UI (MUI v5)     |
-| Routing    | React Router DOM         |
-| State Mgmt | React Context + useState |
-| HTTP       | Axios                    |
-| Auth Flow  | JWT (with context)       |
+| Layer         | Tech                    |
+|---------------|-------------------------|
+| Server        | Node.js + Express.js    |
+| Database      | PostgreSQL              |
+| Auth          | Passport.js + JWT       |
+| ORM / Query   | `pg` Node driver        |
+| Session Mgmt  | express-session         |
+| Middleware    | cors, dotenv, cookie-parser |
+| File Uploads  | `express.static` (uploads folder)
 
 ---
 
-## 🗂️ Project Structure
+## 📁 Folder Structure
 
 ```
-lms-frontend/
-├── public/              # Static files and index.html
-├── src/
-│   ├── pages/           # Page-level components (Login, Dashboard, etc)
-│   ├── components/      # Shared UI components (Cards, Tables...)
-│   ├── services/        # Axios wrappers for backend API
-│   ├── context/         # Auth & role-based logic
-│   ├── App.js           # App entry with routing
-│   └── index.js         # React DOM rendering
-├── .gitignore
+lms-backend-api/
+├── config/             # DB connection & passport config
+├── controllers/        # Request handlers
+├── middleware/         # Auth & error handling
+├── routes/             # Express routers for all entities
+├── uploads/            # Static folder for uploaded files
+├── .env                # Environment variables
 ├── package.json
-└── README.md
+└── server.js
 ```
 
 ---
 
-## 🔑 Key Features
+## 📦 Available Routes
 
-### 🧭 Navigation & Layout
-
-* Clean responsive layout
-* Protected routes based on role
-* Navigation bars update dynamically per user role
-
-### 📚 Courses & Lessons
-
-* Browse courses by category
-* Enroll and track your enrolled courses
-* Modular structure (Modules → Lessons)
-* Video support (YouTube, uploaded .mp4)
-* Lesson progress tracking per student
-
-### 📝 Assignments & Quizzes
-
-* Interactive quiz pages
-* Auto-scored quizzes with percentage feedback
-* Assignment upload (file/text)
-* Grading feedback from instructor
-
-### 👨‍🏫 Instructor Tools
-
-* Create/edit/delete courses
-* Add modules and structured lessons
-* Upload video lessons (external link or file)
-* View enrolled students and grade their work
-
-### 🔒 Auth System
-
-* Google OAuth + email/password login
-* JWT stored in localStorage
-* Role-based UI rendering
+| Base Path         | Description                        |
+|-------------------|------------------------------------|
+| `/api/auth`       | Login, register, Google OAuth      |
+| `/api/users`      | User info, role management         |
+| `/api/courses`    | Create, approve, enroll            |
+| `/api/modules`    | Course modules                     |
+| `/api/lessons`    | Lesson content (text/video)        |
+| `/api/quizzes`    | Quiz creation & evaluation         |
+| `/api/assignments`| Submit/grade assignments           |
+| `/api/enrollments`| Student-course linking             |
+| `/api/categories` | Course categories                  |
+| `/api/files`      | Upload and serve files             |
+| `/api/progress`   | Track lesson completion            |
+| `/api/analytics`  | Admin analytics overview           |
+| `/api/reviews`    | Course reviews                     |
+| `/api/search`     | Search engine                      |
 
 ---
 
 ## 🛠️ Setup Instructions
 
 ```bash
-1. git clone https://github.com/ahmadh9/lms-frontend.git
-2. cd lms-frontend
+1. git clone https://github.com/ahmadh9/lms-backend-api.git
+2. cd lms-backend-api
 3. npm install
-4. Create a .env file with the backend URL:
+4. Create a `.env` file and add:
 ```
 
 ```env
-VITE_API_URL=http://localhost:5000/api
+PORT=5000
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=youruser
+DB_PASSWORD=yourpassword
+DB_NAME=lmsdb
+GOOGLE_CLIENT_ID=your_google_id
+GOOGLE_CLIENT_SECRET=your_google_secret
+SESSION_SECRET=your_session_key
 ```
 
 ```bash
-5. npm run dev   # or npm start if CRA
+5. npm run dev   # or: node server.js
 ```
 
 ---
 
-## 🌐 API Dependency
+## ✅ Test Route
 
-This project relies on the backend API:
-👉 [LMS Backend GitHub Repo](https://github.com/ahmadh9/lms-backend-api)
+To confirm API & DB connection:
 
----
+```http
+GET http://localhost:5000/api/test
+```
 
-## ✨ Deployment Tips
-
-* Ensure CORS is enabled on backend for frontend domain
-* Set correct `VITE_API_URL` for production
-* Recommended deployment: [Netlify](https://netlify.com) or [Vercel](https://vercel.com)
+Response:
+```json
+{ "message": "✅ API Connected", "time": "..." }
+```
 
 ---
 
 ## 👨‍💻 Developed by Ahmad Hammad
 
-📧 [ahmadkhammad95@gmail.com](mailto:ahmadkhammad95@gmail.com)
-🐙 [https://github.com/ahmadh9](https://github.com/ahmadh9)
+📧 ahmadkhammad95@gmail.com  
+🔗 https://github.com/ahmadh9
 
 ---
 
-> For backend repo, features and DB schema, see: [LMS Backend Documentation](https://github.com/ahmadh9/lms-backend-api)
+> For frontend project: [LMS Frontend Repository](https://github.com/ahmadh9/lms-frontend)
